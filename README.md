@@ -59,7 +59,8 @@ lib/
 
 1. **Clone or navigate to the project directory**:
    ```bash
-   cd c:\Users\beher\civic_app
+   cd C:\path\to\your\project\civic_app
+
    ```
 
 2. **Install dependencies**:
@@ -169,21 +170,8 @@ To make this a production-ready app, consider adding:
 - Consider reducing image quality for better performance on older devices
 - Location detection may take longer indoors or in areas with poor GPS signal
 
-## Color Scheme
 
-The app uses a green-based color scheme representing growth and civic responsibility:
-- Primary Color: `#4CAF50` (Green)
-- Background: `#E8F5E8` (Light Green)
-- Text: Various shades of black and gray
-- Success/Confirmation: Green tones
-- Warning/Info: Orange and blue accents
 
-## Contributing
-
-This is a prototype project. For production development, consider:
-- Following Flutter best practices
-- Implementing proper state management (Provider, Bloc, etc.)
-- Adding comprehensive testing
 - Following accessibility guidelines
 - Implementing proper error handling
 
