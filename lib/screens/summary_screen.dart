@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'dart:io';
 import '../models/civic_report.dart';
+import '../services/local_storage_service.dart';
 import 'confirmation_screen.dart';
 
 class SummaryScreen extends StatefulWidget {
@@ -15,13 +17,18 @@ class SummaryScreen extends StatefulWidget {
 class _SummaryScreenState extends State<SummaryScreen> {
   bool _isSubmitting = false;
 
-  void _submitReport() {
+  void _submitReport() async {
     setState(() {
       _isSubmitting = true;
     });
 
-    // Simulate submission process
-    Future.delayed(const Duration(seconds: 2), () {
+    try {
+      // Store the report locally
+      await LocalStorageService.storeReport(widget.report);
+
+      // Simulate submission process
+      await Future.delayed(const Duration(seconds: 2));
+
       setState(() {
         _isSubmitting = false;
       });
@@ -31,7 +38,26 @@ class _SummaryScreenState extends State<SummaryScreen> {
         context,
         MaterialPageRoute(builder: (context) => const ConfirmationScreen()),
       );
-    });
+    } catch (e) {
+      setState(() {
+        _isSubmitting = false;
+      });
+
+      // Show error dialog
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Error'),
+          content: const Text('Failed to submit report. Please try again.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   void _editReport() {
