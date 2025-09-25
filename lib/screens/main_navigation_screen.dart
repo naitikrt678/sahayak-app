@@ -4,7 +4,8 @@ import 'map_screen.dart';
 import 'history_screen.dart';
 import 'profile_screen.dart';
 import 'photo_location_screen.dart';
-import '../utils/image_service.dart';
+import 'about_app_screen.dart';
+import '../services/media_service.dart';
 import '../models/civic_report.dart';
 import 'dart:io';
 
@@ -28,21 +29,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     _screens = [
       const HomeScreen(),
       const MapScreen(),
-      Container(), // Placeholder for center button (New Report)
+      const ProfileScreen(), // Profile screen moved to center
       const HistoryScreen(),
-      const ProfileScreen(),
+      const AboutAppScreen(), // About App screen at the end
     ];
   }
 
   void _onTabTapped(int index) {
-    if (index == 2) {
-      // Center button - New Report
-      _showImageSourceDialog();
-    } else {
-      setState(() {
-        _currentIndex = index;
-      });
-    }
+    setState(() {
+      _currentIndex = index;
+    });
   }
 
   void _showImageSourceDialog() {
@@ -130,18 +126,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     if (sourceType == ImageSourceType.camera) {
       // Request camera permission and take photo
-      bool hasPermission = await ImageService.requestCameraPermission();
+      bool hasPermission = await MediaService.requestCameraPermission();
       if (hasPermission) {
-        imageFile = await ImageService.takePhoto();
+        imageFile = await MediaService.takePhoto();
       } else {
         _showPermissionDeniedDialog('Camera');
         return;
       }
     } else {
       // Request gallery permission and pick image
-      bool hasPermission = await ImageService.requestGalleryPermission();
+      bool hasPermission = await MediaService.requestGalleryPermission();
       if (hasPermission) {
-        imageFile = await ImageService.pickFromGallery();
+        imageFile = await MediaService.pickFromGallery();
       } else {
         _showPermissionDeniedDialog('Gallery');
         return;
@@ -196,36 +192,47 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         ),
         child: SafeArea(
           child: Container(
-            height: 70,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            height: 80, // Increased by 5 more pixels to fix overflow
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                _buildBottomNavItem(
-                  icon: Icons.home,
-                  label: 'Home',
-                  index: 0,
-                  isActive: _currentIndex == 0,
+                Expanded(
+                  child: _buildBottomNavItem(
+                    icon: Icons.home,
+                    label: 'Home',
+                    index: 0,
+                    isActive: _currentIndex == 0,
+                  ),
                 ),
-                _buildBottomNavItem(
-                  icon: Icons.map,
-                  label: 'Map',
-                  index: 1,
-                  isActive: _currentIndex == 1,
+                Expanded(
+                  child: _buildBottomNavItem(
+                    icon: Icons.map,
+                    label: 'Map',
+                    index: 1,
+                    isActive: _currentIndex == 1,
+                  ),
                 ),
-                _buildCenterButton(),
-                _buildBottomNavItem(
-                  icon: Icons.history,
-                  label: 'History',
-                  index: 3,
-                  isActive: _currentIndex == 3,
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  child: _buildCenterProfileButton(),
                 ),
-                _buildBottomNavItem(
-                  icon: Icons.person,
-                  label: 'Profile',
-                  index: 4,
-                  isActive: _currentIndex == 4,
+                Expanded(
+                  child: _buildBottomNavItem(
+                    icon: Icons.history,
+                    label: 'History',
+                    index: 3,
+                    isActive: _currentIndex == 3,
+                  ),
+                ),
+                Expanded(
+                  child: _buildBottomNavItem(
+                    icon: Icons.info_outline,
+                    label: 'About',
+                    index: 4,
+                    isActive: _currentIndex == 4,
+                  ),
                 ),
               ],
             ),
@@ -241,62 +248,81 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     required int index,
     required bool isActive,
   }) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => _onTabTapped(index),
-        child: Container(
-          height: 54,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 22,
-                color: isActive ? const Color(0xFF4CAF50) : Colors.grey[500],
-              ),
-              const SizedBox(height: 4),
-              Flexible(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isActive
-                        ? const Color(0xFF4CAF50)
-                        : Colors.grey[500],
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+    return GestureDetector(
+      onTap: () => _onTabTapped(index),
+      child: Container(
+        height: 54, // Following overflow prevention guidelines
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 22,
+              color: isActive ? const Color(0xFF4CAF50) : Colors.grey[500],
+            ),
+            const SizedBox(height: 2),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 9, // Slightly smaller to prevent overflow
+                  color: isActive ? const Color(0xFF4CAF50) : Colors.grey[500],
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildCenterButton() {
+  Widget _buildCenterProfileButton() {
     return GestureDetector(
       onTap: () => _onTabTapped(2),
       child: Container(
-        width: 48,
-        height: 48,
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: const BoxDecoration(
-          color: Color(0xFF4CAF50),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x404CAF50),
-              spreadRadius: 1,
-              blurRadius: 6,
-              offset: Offset(0, 2),
+        height: 54, // Match other nav items height
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, // Further reduced to fit better
+              height: 40,
+              decoration: const BoxDecoration(
+                color: Color(0xFF4CAF50),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x404CAF50),
+                    spreadRadius: 1,
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.person, color: Colors.white, size: 22),
+            ),
+            const SizedBox(height: 2),
+            const Flexible(
+              child: Text(
+                'Profile',
+                style: TextStyle(
+                  fontSize: 9, // Reduced to match other labels
+                  color: Color(0xFF4CAF50),
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
             ),
           ],
         ),
-        child: const Icon(Icons.add, color: Colors.white, size: 28),
       ),
     );
   }

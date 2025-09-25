@@ -4,6 +4,8 @@ import '../models/civic_report.dart';
 import '../utils/location_service.dart';
 import 'package:location/location.dart' as loc;
 import 'details_screen.dart';
+import 'voice_recording_screen.dart';
+import '../services/voice_recording_service.dart';
 
 class PhotoLocationScreen extends StatefulWidget {
   final CivicReport report;
@@ -19,6 +21,7 @@ class _PhotoLocationScreenState extends State<PhotoLocationScreen> {
   final TextEditingController _addressController = TextEditingController();
   bool _isLoadingLocation = false;
   bool _locationDetected = false;
+  VoiceRecordingResult? _voiceRecording;
 
   @override
   void initState() {
@@ -49,27 +52,38 @@ class _PhotoLocationScreenState extends State<PhotoLocationScreen> {
         return;
       }
 
-      // Get current location
-      loc.LocationData? locationData =
-          await LocationService.getCurrentLocation();
+      // Show progress message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Getting your location...'),
+          backgroundColor: Color(0xFF4CAF50),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // Use fast location method first
+      loc.LocationData? locationData = await LocationService.getLocationFast();
 
       if (locationData != null &&
           locationData.latitude != null &&
           locationData.longitude != null) {
-        // Get address from coordinates
-        String address = await LocationService.getAddressFromCoordinates(
+        // Update UI with coordinates immediately
+        setState(() {
+          _currentReport = _currentReport.copyWith(
+            latitude: locationData.latitude,
+            longitude: locationData.longitude,
+          );
+          _locationDetected = true;
+          _addressController.text = 'Getting address...';
+        });
+
+        // Get address in background (non-blocking)
+        _getAddressInBackground(
           locationData.latitude!,
           locationData.longitude!,
         );
 
         setState(() {
-          _currentReport = _currentReport.copyWith(
-            latitude: locationData.latitude,
-            longitude: locationData.longitude,
-            address: address,
-          );
-          _addressController.text = address;
-          _locationDetected = true;
           _isLoadingLocation = false;
         });
       } else {
@@ -84,6 +98,35 @@ class _PhotoLocationScreenState extends State<PhotoLocationScreen> {
         _addressController.text = 'Error detecting location';
       });
       print('Error detecting location: $e');
+    }
+  }
+
+  // Get address in background without blocking UI
+  Future<void> _getAddressInBackground(
+    double latitude,
+    double longitude,
+  ) async {
+    try {
+      String address = await LocationService.getAddressFromCoordinates(
+        latitude,
+        longitude,
+      );
+
+      // Update address when ready
+      if (mounted) {
+        setState(() {
+          _currentReport = _currentReport.copyWith(address: address);
+          _addressController.text = address;
+        });
+      }
+    } catch (e) {
+      print('Error getting address in background: $e');
+      if (mounted) {
+        setState(() {
+          _addressController.text =
+              'Location: ${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+        });
+      }
     }
   }
 
@@ -129,15 +172,19 @@ class _PhotoLocationScreenState extends State<PhotoLocationScreen> {
       return;
     }
 
-    // Update the report with the final address
+    // Update the report with the final address and voice recording
     final updatedReport = _currentReport.copyWith(
       address: _addressController.text.trim(),
+      voiceNotes: _voiceRecording?.tempFilePath ?? '',
     );
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => DetailsScreen(report: updatedReport),
+        builder: (context) => DetailsScreen(
+          report: updatedReport,
+          voiceRecording: _voiceRecording,
+        ),
       ),
     );
   }
@@ -330,6 +377,20 @@ class _PhotoLocationScreenState extends State<PhotoLocationScreen> {
 
             const SizedBox(height: 30),
 
+            // Voice Note Section
+            const Text(
+              'Voice Note (Optional)',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildVoiceNoteSection(),
+
+            const SizedBox(height: 30),
+
             // Retry Location Button
             if (!_locationDetected)
               Container(
@@ -377,6 +438,85 @@ class _PhotoLocationScreenState extends State<PhotoLocationScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _addVoiceNote() async {
+    final result = await Navigator.push<VoiceRecordingResult>(
+      context,
+      MaterialPageRoute(builder: (context) => const VoiceRecordingScreen()),
+    );
+
+    if (result != null) {
+      setState(() {
+        _voiceRecording = result;
+      });
+    }
+  }
+
+  void _removeVoiceNote() {
+    setState(() {
+      _voiceRecording = null;
+    });
+  }
+
+  Widget _buildVoiceNoteSection() {
+    if (_voiceRecording == null) {
+      return Container(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _addVoiceNote,
+          icon: const Icon(Icons.mic, color: Color(0xFF4CAF50)),
+          label: const Text(
+            'Add Voice Note',
+            style: TextStyle(color: Color(0xFF4CAF50)),
+          ),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 15),
+            side: const BorderSide(color: Color(0xFF4CAF50)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4CAF50).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF4CAF50), width: 1),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.mic, color: Color(0xFF4CAF50), size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Voice note recorded (${_voiceRecording!.durationFormatted})',
+                  style: const TextStyle(
+                    color: Color(0xFF4CAF50),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: _removeVoiceNote,
+                icon: const Icon(Icons.close, color: Colors.red, size: 20),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Size: ${_voiceRecording!.fileSizeFormatted}',
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+          ),
+        ],
       ),
     );
   }

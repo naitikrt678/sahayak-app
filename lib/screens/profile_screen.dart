@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/local_storage_service.dart';
+import '../widgets/supabase_status_card.dart';
 import 'login_screen.dart';
+import 'settings_screen.dart';
+import 'upload_diagnostic_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -193,6 +196,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 24),
 
+            // Supabase Status Card
+            const SupabaseStatusCard(),
+
+            const SizedBox(height: 24),
+
             // Menu Options
             Container(
               width: double.infinity,
@@ -211,14 +219,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 children: [
                   _buildMenuOption(
+                    icon: Icons.settings,
+                    title: 'Settings',
+                    subtitle: 'App preferences and data source settings',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SettingsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildMenuOption(
+                    icon: Icons.cloud_upload_outlined,
+                    title: 'Upload Diagnostics',
+                    subtitle: 'Check upload issues and troubleshoot problems',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const UploadDiagnosticScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildMenuOption(
                     icon: Icons.notifications,
                     title: 'Notifications',
                     subtitle: 'Manage your notification preferences',
                     onTap: () {
-                      // TODO: Navigate to notifications settings
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Notification settings coming soon'),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SettingsScreen(),
                         ),
                       );
                     },

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/local_storage_service.dart';
-import '../services/dummy_data_service.dart';
+import '../services/data_service.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -30,7 +30,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
       // If no stored notifications, use dummy data
       final notifications = storedNotifications.isEmpty
-          ? DummyDataService.getDummyNotifications()
+          ? DataService.getDummyNotifications()
           : storedNotifications;
 
       setState(() {
@@ -39,7 +39,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       });
     } catch (e) {
       setState(() {
-        _notifications = DummyDataService.getDummyNotifications();
+        _notifications = DataService.getDummyNotifications();
         _isLoading = false;
       });
     }

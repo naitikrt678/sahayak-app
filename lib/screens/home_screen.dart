@@ -1,15 +1,18 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../utils/image_service.dart';
+import '../services/media_service.dart';
 import '../models/civic_report.dart';
 import '../services/local_storage_service.dart';
-import '../services/dummy_data_service.dart';
+import '../services/data_service.dart';
+import '../services/upload_queue_service.dart';
 import 'photo_location_screen.dart';
 import 'login_screen.dart';
 import 'notifications_screen.dart';
 import 'map_screen.dart';
 import 'history_screen.dart';
+import 'civic_officers_screen.dart';
 
 enum ImageSourceType { camera, gallery }
 
@@ -25,12 +28,63 @@ class _HomeScreenState extends State<HomeScreen> {
   List<CivicReport> _recentReports = [];
   int _unreadNotifications = 0;
   Map<String, int> _statistics = {'inProgress': 0, 'resolved': 0, 'total': 0};
+  QueueStatus? _uploadStatus;
+  Timer? _statusUpdateTimer;
 
   @override
   void initState() {
     super.initState();
     _loadUserName();
     _loadData();
+    _startStatusUpdates();
+  }
+
+  @override
+  void dispose() {
+    _statusUpdateTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startStatusUpdates() {
+    // Update upload status every 2 seconds when there are active uploads
+    _statusUpdateTimer = Timer.periodic(const Duration(seconds: 2), (
+      timer,
+    ) async {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      final queueStatus = await UploadQueueService.getQueueStatus();
+      if (mounted) {
+        setState(() {
+          _uploadStatus = queueStatus;
+        });
+
+        // If no active uploads, reduce update frequency
+        if (!queueStatus.isActive) {
+          timer.cancel();
+          _statusUpdateTimer = Timer.periodic(const Duration(seconds: 10), (
+            timer,
+          ) async {
+            if (!mounted) {
+              timer.cancel();
+              return;
+            }
+            final status = await UploadQueueService.getQueueStatus();
+            if (mounted) {
+              setState(() {
+                _uploadStatus = status;
+              });
+              if (status.isActive) {
+                timer.cancel();
+                _startStatusUpdates(); // Resume frequent updates
+              }
+            }
+          });
+        }
+      }
+    });
   }
 
   Future<void> _loadUserName() async {
@@ -43,19 +97,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadData() async {
     try {
-      // Load recent reports
-      final reports = await LocalStorageService.getRecentReports();
-      if (reports.isEmpty) {
-        // Use dummy data if no stored reports
-        final dummyReports = DummyDataService.getDummyReports();
-        setState(() {
-          _recentReports = dummyReports.take(5).toList();
-        });
-      } else {
-        setState(() {
-          _recentReports = reports;
-        });
-      }
+      // Load recent reports using DataService (handles mock vs live)
+      final reports = await DataService.getRecentReports();
+      setState(() {
+        _recentReports = reports;
+      });
 
       // Load notifications count
       final unreadCount =
@@ -64,15 +110,22 @@ class _HomeScreenState extends State<HomeScreen> {
         _unreadNotifications = unreadCount;
       });
 
+      // Load upload queue status
+      final queueStatus = await UploadQueueService.getQueueStatus();
+      setState(() {
+        _uploadStatus = queueStatus;
+      });
+
       // Load statistics
-      final stats = DummyDataService.getStatistics();
+      final stats = DataService.getStatistics();
       setState(() {
         _statistics = stats;
       });
     } catch (e) {
+      // Remove print and use proper error handling
       // Use dummy data on error
-      final dummyReports = DummyDataService.getDummyReports();
-      final stats = DummyDataService.getStatistics();
+      final dummyReports = await DataService.getAllReports();
+      final stats = DataService.getStatistics();
       setState(() {
         _recentReports = dummyReports.take(5).toList();
         _statistics = stats;
@@ -166,18 +219,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (sourceType == ImageSourceType.camera) {
       // Request camera permission and take photo
-      bool hasPermission = await ImageService.requestCameraPermission();
+      bool hasPermission = await MediaService.requestCameraPermission();
       if (hasPermission) {
-        imageFile = await ImageService.takePhoto();
+        imageFile = await MediaService.takePhoto();
       } else {
         _showPermissionDeniedDialog('Camera');
         return;
       }
     } else {
       // Request gallery permission and pick image
-      bool hasPermission = await ImageService.requestGalleryPermission();
+      bool hasPermission = await MediaService.requestGalleryPermission();
       if (hasPermission) {
-        imageFile = await ImageService.pickFromGallery();
+        imageFile = await MediaService.pickFromGallery();
       } else {
         _showPermissionDeniedDialog('Gallery');
         return;
@@ -214,6 +267,267 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildNotificationButton() {
+    final hasActiveUploads = _uploadStatus?.isActive ?? false;
+    final uploadingCount = _uploadStatus?.uploading ?? 0;
+    final pendingCount = _uploadStatus?.pending ?? 0;
+    final totalActive = _uploadStatus?.active ?? 0;
+
+    return Stack(
+      children: [
+        IconButton(
+          icon: Stack(
+            children: [
+              const Icon(Icons.notifications, color: Colors.black54),
+              // Upload progress indicator
+              if (hasActiveUploads)
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: uploadingCount > 0
+                          ? Colors.orange
+                          : const Color(0xFF4CAF50),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          onPressed: () {
+            if (hasActiveUploads) {
+              _showUploadProgressDialog();
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const NotificationsScreen(),
+                ),
+              );
+            }
+          },
+        ),
+        // Notification badge for unread notifications (when no active uploads)
+        if (_unreadNotifications > 0 && !hasActiveUploads)
+          Positioned(
+            right: 8,
+            top: 8,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+              child: Text(
+                _unreadNotifications.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        // Upload progress badge (takes priority over notification badge)
+        if (hasActiveUploads)
+          Positioned(
+            right: 8,
+            top: 8,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: uploadingCount > 0
+                    ? Colors.orange
+                    : const Color(0xFF4CAF50),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+              child: Text(
+                totalActive.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _showUploadProgressDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.cloud_upload,
+                    color: (_uploadStatus?.uploading ?? 0) > 0
+                        ? Colors.orange
+                        : const Color(0xFF4CAF50),
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Upload Progress',
+                      style: TextStyle(fontSize: 18),
+                    ),
+                  ),
+                ],
+              ),
+              content: Container(
+                width: double.maxFinite,
+                constraints: const BoxConstraints(maxHeight: 300),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_uploadStatus != null) ...[
+                      _buildUploadStatusItem(
+                        'Uploading',
+                        _uploadStatus!.uploading,
+                        Colors.orange,
+                        Icons.cloud_upload,
+                      ),
+                      _buildUploadStatusItem(
+                        'Pending',
+                        _uploadStatus!.pending,
+                        Colors.blue,
+                        Icons.schedule,
+                      ),
+                      _buildUploadStatusItem(
+                        'Retrying',
+                        _uploadStatus!.retrying,
+                        Colors.amber,
+                        Icons.refresh,
+                      ),
+                      if (_uploadStatus!.failed > 0)
+                        _buildUploadStatusItem(
+                          'Failed',
+                          _uploadStatus!.failed,
+                          Colors.red,
+                          Icons.error,
+                        ),
+                      const SizedBox(height: 16),
+                      // Overall progress bar
+                      Container(
+                        width: double.infinity,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: _uploadStatus!.total > 0
+                              ? _uploadStatus!.completed / _uploadStatus!.total
+                              : 0.0,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4CAF50),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${_uploadStatus!.completed} of ${_uploadStatus!.total} completed',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ] else ...[
+                      const Center(child: CircularProgressIndicator()),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                if ((_uploadStatus?.failed ?? 0) > 0)
+                  TextButton(
+                    onPressed: () async {
+                      await UploadQueueService.retryFailedUploads();
+                      if (mounted) {
+                        Navigator.pop(context);
+                      }
+                    },
+                    child: const Text('Retry Failed'),
+                  ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const NotificationsScreen(),
+                      ),
+                    );
+                  },
+                  child: const Text('View Notifications'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildUploadStatusItem(
+    String label,
+    int count,
+    Color color,
+    IconData icon,
+  ) {
+    if (count == 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          ),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: color.withOpacity(0.3)),
+            ),
+            child: Text(
+              count.toString(),
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -231,48 +545,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        actions: [
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications, color: Colors.black54),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const NotificationsScreen(),
-                    ),
-                  );
-                },
-              ),
-              if (_unreadNotifications > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
-                    ),
-                    child: Text(
-                      _unreadNotifications.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
+        actions: [_buildNotificationButton()],
       ),
       body: Stack(
         children: [
@@ -307,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Your Voice for a Better Jharkhand',
+                  'Your Voice for a Better India',
                   style: TextStyle(fontSize: 16, color: Colors.black54),
                 ),
                 const SizedBox(height: 40),
@@ -329,8 +602,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Issue Map Tile
-                _buildIssueMapTile(),
+                // Issue Map and Civic Officers Row
+                Row(
+                  children: [
+                    Expanded(child: _buildIssueMapTile()),
+                    const SizedBox(width: 16),
+                    Expanded(child: _buildCivicOfficersTile()),
+                  ],
+                ),
 
                 const SizedBox(height: 30),
 
@@ -342,7 +621,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Footer
                 const Center(
                   child: Text(
-                    'www.sahayakjharkhand.com',
+                    'www.sahayakindia.com',
                     style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                 ),
@@ -520,8 +799,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
       child: Container(
-        width: double.infinity,
-        height: 80,
+        height: 120,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -536,7 +814,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Row(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 width: 50,
@@ -547,28 +826,95 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: const Icon(Icons.map, color: Colors.blue, size: 28),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               const Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
                       'Issue Map',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: Colors.black87,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                     Text(
-                      'View all issues on map',
+                      'View all issues',
                       style: TextStyle(fontSize: 12, color: Colors.grey),
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[400]),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCivicOfficersTile() {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const CivicOfficersScreen()),
+        );
+      },
+      child: Container(
+        height: 120,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              spreadRadius: 1,
+              blurRadius: 5,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.badge, color: Colors.orange, size: 28),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Civic Officers',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    Text(
+                      'Contact officers',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -662,7 +1008,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildRecentIssueCard(CivicReport report) {
-    final progress = DummyDataService.getReportProgress(report);
+    final progress = DataService.getReportProgress(report);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),

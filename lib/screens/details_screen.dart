@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import '../models/civic_report.dart';
+import '../services/voice_recording_service.dart';
 import 'summary_screen.dart';
 
 class DetailsScreen extends StatefulWidget {
   final CivicReport report;
+  final VoiceRecordingResult? voiceRecording;
 
-  const DetailsScreen({super.key, required this.report});
+  const DetailsScreen({super.key, required this.report, this.voiceRecording});
 
   @override
   State<DetailsScreen> createState() => _DetailsScreenState();
@@ -19,6 +21,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
   final TextEditingController _categoryController = TextEditingController();
 
   bool _hasVoiceNote = false;
+  VoiceRecordingResult? _voiceRecording;
   String _selectedCategory = '';
 
   final List<String> _categories = [
@@ -38,6 +41,8 @@ class _DetailsScreenState extends State<DetailsScreen> {
   void initState() {
     super.initState();
     _currentReport = widget.report;
+    _voiceRecording = widget.voiceRecording;
+    _hasVoiceNote = _voiceRecording != null;
     _descriptionController.text = _currentReport.description;
     _additionalNotesController.text = _currentReport.additionalNotes;
     _categoryController.text = _currentReport.category;
@@ -81,7 +86,10 @@ class _DetailsScreenState extends State<DetailsScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => SummaryScreen(report: _currentReport),
+        builder: (context) => SummaryScreen(
+          report: _currentReport,
+          voiceRecording: _voiceRecording,
+        ),
       ),
     );
   }

@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart';
 import 'dart:io';
 import '../models/civic_report.dart';
-import '../services/local_storage_service.dart';
+import '../services/upload_service.dart';
+import '../services/voice_recording_service.dart';
 import 'confirmation_screen.dart';
 
 class SummaryScreen extends StatefulWidget {
   final CivicReport report;
+  final VoiceRecordingResult? voiceRecording;
 
-  const SummaryScreen({super.key, required this.report});
+  const SummaryScreen({super.key, required this.report, this.voiceRecording});
 
   @override
   State<SummaryScreen> createState() => _SummaryScreenState();
@@ -23,21 +24,31 @@ class _SummaryScreenState extends State<SummaryScreen> {
     });
 
     try {
-      // Store the report locally
-      await LocalStorageService.storeReport(widget.report);
+      // Check if report has required data
+      if (widget.report.image == null) {
+        throw Exception('No image provided');
+      }
 
-      // Simulate submission process
-      await Future.delayed(const Duration(seconds: 2));
+      // Upload the report using the new upload service
+      final result = await UploadService.uploadReport(
+        report: widget.report,
+        imageFile: widget.report.image!,
+        voiceResult: widget.voiceRecording,
+      );
 
       setState(() {
         _isSubmitting = false;
       });
 
-      // Navigate to confirmation screen
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const ConfirmationScreen()),
-      );
+      if (result.success) {
+        // Navigate to confirmation screen
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const ConfirmationScreen()),
+        );
+      } else {
+        throw Exception(result.error ?? 'Upload failed');
+      }
     } catch (e) {
       setState(() {
         _isSubmitting = false;
@@ -48,7 +59,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Error'),
-          content: const Text('Failed to submit report. Please try again.'),
+          content: Text('Failed to submit report: $e'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),

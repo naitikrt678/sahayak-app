@@ -8,6 +8,7 @@ class CivicReport {
   File? image;
   String? imagePath;
   String? imageUrl;
+  String? voiceUrl; // New field for voice URL
   double? latitude;
   double? longitude;
   String address;
@@ -22,6 +23,7 @@ class CivicReport {
   String urgency;
   String? landmarks;
   DateTime timestamp;
+  DateTime? createdAt; // Supabase timestamp
 
   CivicReport({
     this.id,
@@ -30,6 +32,7 @@ class CivicReport {
     this.image,
     this.imagePath,
     this.imageUrl,
+    this.voiceUrl,
     this.latitude,
     this.longitude,
     this.address = '',
@@ -44,6 +47,7 @@ class CivicReport {
     this.urgency = 'medium',
     this.landmarks,
     DateTime? timestamp,
+    this.createdAt,
   }) : timestamp = timestamp ?? DateTime.now();
 
   // Helper method to check if location is available
@@ -68,6 +72,7 @@ class CivicReport {
     File? image,
     String? imagePath,
     String? imageUrl,
+    String? voiceUrl,
     double? latitude,
     double? longitude,
     String? address,
@@ -82,6 +87,7 @@ class CivicReport {
     String? urgency,
     String? landmarks,
     DateTime? timestamp,
+    DateTime? createdAt,
   }) {
     return CivicReport(
       id: id ?? this.id,
@@ -90,6 +96,7 @@ class CivicReport {
       image: image ?? this.image,
       imagePath: imagePath ?? this.imagePath,
       imageUrl: imageUrl ?? this.imageUrl,
+      voiceUrl: voiceUrl ?? this.voiceUrl,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       address: address ?? this.address,
@@ -104,6 +111,7 @@ class CivicReport {
       urgency: urgency ?? this.urgency,
       landmarks: landmarks ?? this.landmarks,
       timestamp: timestamp ?? this.timestamp,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 
@@ -113,11 +121,18 @@ class CivicReport {
       id: json['id'],
       serialNumber: json['serialNumber'],
       requestId: json['requestId'],
-      imageUrl: json['image'],
-      latitude: json['geolocation']?['lat']?.toDouble(),
-      longitude: json['geolocation']?['lng']?.toDouble(),
-      address: json['geolocation']?['address'] ?? '',
+      imagePath: json['imagePath'],
+      imageUrl: json['imageUrl'] ?? json['image'],
+      voiceUrl: json['voiceUrl'],
+      latitude:
+          json['latitude']?.toDouble() ??
+          json['geolocation']?['lat']?.toDouble(),
+      longitude:
+          json['longitude']?.toDouble() ??
+          json['geolocation']?['lng']?.toDouble(),
+      address: json['address'] ?? json['geolocation']?['address'] ?? '',
       description: json['description'] ?? '',
+      voiceNotes: json['voiceNotes'] ?? '',
       additionalNotes: json['additionalNotes'] ?? '',
       category: json['category'] ?? '',
       area: json['area'] ?? '',
@@ -126,8 +141,40 @@ class CivicReport {
       status: json['status'] ?? 'pending',
       urgency: json['urgency'] ?? 'medium',
       landmarks: json['landmarks'],
-      timestamp: _parseDate(json['date'], json['time']),
+      timestamp: json['timestamp'] != null
+          ? DateTime.parse(json['timestamp'])
+          : _parseDate(json['date'], json['time']),
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : null,
     );
+  }
+
+  // Convert to JSON data
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'serialNumber': serialNumber,
+      'requestId': requestId,
+      'imagePath': imagePath,
+      'imageUrl': imageUrl,
+      'voiceUrl': voiceUrl,
+      'latitude': latitude,
+      'longitude': longitude,
+      'address': address,
+      'description': description,
+      'voiceNotes': voiceNotes,
+      'additionalNotes': additionalNotes,
+      'category': category,
+      'area': area,
+      'time': time,
+      'date': date,
+      'status': status,
+      'urgency': urgency,
+      'landmarks': landmarks,
+      'timestamp': timestamp.toIso8601String(),
+      'createdAt': createdAt?.toIso8601String(),
+    };
   }
 
   // Helper method to parse date and time
