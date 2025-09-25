@@ -175,6 +175,4 @@ To make this a production-ready app, consider adding:
 - Following accessibility guidelines
 - Implementing proper error handling
 
-## License
 
-This is a prototype project for demonstration purposes.
